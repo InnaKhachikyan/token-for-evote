@@ -77,3 +77,160 @@ done:
     if (ctx) BN_CTX_free(ctx);
     return ret;
 }
+
+int rsa_encrypt(const BIGNUM *m, const BIGNUM *n, const BIGNUM *e, BIGNUM *c_out, BN_CTX *ctx) {
+    if (!BN_mod_exp(c_out, m, e, n, ctx)) {
+        return 0;
+    }
+    return 1;
+}
+
+int rsa_decrypt(const BIGNUM *c, const BIGNUM *n, const BIGNUM *d, BIGNUM *m_out, BN_CTX *ctx) {
+    if (!BN_mod_exp(m_out, c, d, n, ctx)) {
+        return 0;
+    }
+    return 1;
+}
+
+static BIGNUM *read_hex_bn(const char *prompt) {
+    char buf[4096];
+
+    printf("%s", prompt);
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        return NULL;
+    }
+
+    size_t len = strlen(buf);
+    while (len > 0 && (buf[len-1] == '\n' || buf[len-1] == '\r')) {
+        buf[--len] = '\0';
+    }
+    if (len == 0) {
+        return NULL;
+    }
+
+    BIGNUM *bn = NULL;
+    if (!BN_hex2bn(&bn, buf)) {
+        return NULL;
+    }
+    return bn;
+}
+
+int main(void) {
+    if (RAND_status() != 1) { // the rand func should be seeded
+        unsigned char seed[32];
+        FILE *urandom = fopen("/dev/urandom", "rb");
+        if (urandom) {
+            if (fread(seed, 1, sizeof(seed), urandom) == sizeof(seed)) {
+                RAND_seed(seed, sizeof(seed));
+            }
+            fclose(urandom);
+        }
+        if (RAND_status() != 1) {
+            fprintf(stderr, "CSPRNG not properly seeded.\n");
+            return 1;
+        }
+    }
+
+    printf("Generating %d-bit RSA keypair...\n", RSA_BITS);
+
+    BIGNUM *n = NULL, *e = NULL, *d = NULL;
+    if (!rsa_generate_keypair(&n, &e, &d, RSA_BITS)) {
+        fprintf(stderr, "Key generation failed.\n");
+        return 1;
+    }
+
+    printf("\n=== Public key ===\n");
+    printf("n (modulus)  = 0x");
+    BN_print_fp(stdout, n);
+    printf("\n");
+    printf("e (exponent) = 0x");
+    BN_print_fp(stdout, e);
+    printf("\n");
+
+    printf("\n=== Private key ===\n");
+    printf("d (exponent) = 0x");
+    BN_print_fp(stdout, d);
+    printf("\n\n");
+
+    BN_CTX *ctx = BN_CTX_new();
+    if (!ctx) {
+        fprintf(stderr, "BN_CTX_new failed.\n");
+        BN_free(n);
+        BN_free(e);
+        BN_free(d);
+        return 1;
+    }
+
+    printf("Enter plaintext as HEX (must be < n):\n");
+    BIGNUM *m = read_hex_bn("m = 0x");
+    if (!m) {
+        fprintf(stderr, "Failed to read plaintext.\n");
+        BN_free(n);
+        BN_free(e);
+        BN_free(d);
+        BN_CTX_free(ctx);
+        return 1;
+    }
+
+    if (BN_cmp(m, n) >= 0) {
+        fprintf(stderr, "Plaintext must be strictly less than n.\n");
+        BN_free(m);
+        BN_free(n);
+        BN_free(e);
+        BN_free(d);
+        BN_CTX_free(ctx);
+        return 1;
+    }
+
+    BIGNUM *c = BN_new();
+    BIGNUM *m_dec = BN_new();
+    if (!c || !m_dec) {
+        fprintf(stderr, "BN_new failed.\n");
+        if (c) BN_free(c);
+        if (m_dec) BN_free(m_dec);
+        BN_free(m);
+        BN_free(n);
+        BN_free(e);
+        BN_free(d);
+        BN_CTX_free(ctx);
+        return 1;
+    }
+
+    if (!rsa_encrypt(m, n, e, c, ctx)) {
+        fprintf(stderr, "Encryption failed.\n");
+        goto cleanup;
+    }
+
+    printf("\nCiphertext:\n");
+    printf("c = 0x");
+    BN_print_fp(stdout, c);
+    printf("\n");
+
+    if (!rsa_decrypt(c, n, d, m_dec, ctx)) {
+        fprintf(stderr, "Decryption failed.\n");
+        goto cleanup;
+    }
+
+    printf("\nDecrypted plaintext:\n");
+    printf("m' = 0x");
+    BN_print_fp(stdout, m_dec);
+    printf("\n");
+
+    if (BN_cmp(m, m_dec) == 0) {
+        printf("\n[OK] m' == m (decryption correct)\n");
+    } else {
+        printf("\n[!] m' != m (something is wrong)\n");
+    }
+
+cleanup:
+    BN_free(m);
+    BN_free(c);
+    BN_free(m_dec);
+    BN_free(n);
+    BN_free(e);
+    BN_free(d);
+    BN_CTX_free(ctx);
+
+    return 0;
+}
+
