@@ -35,3 +35,32 @@ u64 exp_mod(u64 base, u64 exp, u64 mod) {
 	return result;
 }
 
+//here I am using long long instead of unsigned, as the coefficients might end up negative
+long long bezout_identity(long long a, long long b, long long *x, long long *y) {
+	if(b == 0) {
+		*x = 1;
+		*y = 0;
+		return a;
+	}
+	long long x1, y1;
+	long long g = bezout_identity(b, a % b, &x1, &y1);
+	*x = y1;
+	*y = x1 - (a/b) * y1;
+	return g;
+}
+
+// assuming gcd(a,m) == 1
+u64 mod_inv(u64 a, u64 m) {
+	long long x, y;
+	long long g = bezout_identity((long long)a, (long long)m, &x, &y);
+	if(g != 1) {
+		fprintf(stderr, "no inverse, gcd != 1\n");
+		exit(1);
+	}
+	long long result = x % (long long)m;
+	if(result < 0) {
+		result += m;
+	}
+	return (u64)result;
+}
+
