@@ -174,5 +174,90 @@ u64 random_coprime(u64 n) {
 }
 
 int main(void) {
+    if (RAND_status() != 1) {
+        if (RAND_poll() != 1) {
+            fprintf(stderr, "CSPRNG not properly seeded\n");
+            return 1;
+        }
+    }
 
+    // p, q should be < 2^16 so that n^2 fits in 64 bits
+    u64 min_prime = (1ULL << 15);      // 32768
+    u64 max_prime = (1ULL << 16) - 1;  // 65535
+
+    u64 p = random_prime_in_range(min_prime, max_prime);
+    u64 q;
+    do {
+        q = random_prime_in_range(min_prime, max_prime);
+    } while (q == p);
+
+    Paillier_pub_key pub;
+    Paillier_priv_key priv;
+    paillier_keygen(p, q, &pub, &priv);
+
+    printf("=== Paillier key generated ===\n");
+    printf("p       = %llu\n", (unsigned long long)p);
+    printf("q       = %llu\n", (unsigned long long)q);
+    printf("n       = %llu\n", (unsigned long long)pub.n);
+    printf("n^2     = %llu\n", (unsigned long long)pub.n_squared);
+    printf("g       = %llu\n\n", (unsigned long long)pub.g);
+
+    unsigned long long num_voters;
+    printf("Enter number of voters: ");
+    if (scanf("%llu", &num_voters) != 1 || num_voters == 0) {
+        fprintf(stderr, "Invalid number of voters\n");
+        return 1;
+    }
+
+    u64 *ciphertexts = malloc(num_voters * sizeof(u64));
+    if (!ciphertexts) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
+
+    u64 C_tally = 1 % pub.n_squared;
+
+    for (unsigned long long i = 0; i < num_voters; i++) {
+        int vote;
+        while (1) {
+            printf("Voter %llu, enter your vote (0 = No, 1 = Yes): ",
+                   (unsigned long long)(i + 1));
+            if (scanf("%d", &vote) != 1) {
+                fprintf(stderr, "Invalid input\n");
+                free(ciphertexts);
+                return 1;
+            }
+            if (vote == 0 || vote == 1) break;
+            printf("Please enter only 0 or 1.\n");
+        }
+
+        u64 m = (u64)vote;
+        u64 r = random_coprime(pub.n);
+        u64 c = paillier_encrypt(m, r, &pub);
+        ciphertexts[i] = c;
+
+        C_tally = mod_mul(C_tally, c, pub.n_squared);
+    }
+
+    printf("\n=== Published encrypted votes (ciphertexts) ===\n");
+    for (unsigned long long i = 0; i < num_voters; i++) {
+        printf("Voter %llu: c = %llu\n",
+               (unsigned long long)(i + 1),
+               (unsigned long long)ciphertexts[i]);
+    }
+
+    u64 total_yes = paillier_decrypt(C_tally, &pub, &priv);
+    unsigned long long total_no = 0;
+    if (total_yes <= num_voters) {
+        total_no = num_voters - total_yes;
+    } else {
+        fprintf(stderr, "Warning: total_yes > num_voters, something is wrong\n");
+    }
+
+    printf("\n=== Tally result ===\n");
+    printf("Total YES votes: %llu\n", (unsigned long long)total_yes);
+    printf("Total  NO  votes: %llu\n", total_no);
+
+    free(ciphertexts);
+    return 0;
 }
