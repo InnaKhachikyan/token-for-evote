@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "miller_rabin.h"
+#include <openssl/rand.h>
 
 typedef unsigned long long u64;
 typedef __uint128_t u128;
@@ -19,7 +20,7 @@ typedef struct {
 
 u64 gcd_u64(u64 a, u64 b) {
 	while(b != 0) {
-		u64 t = a & b;
+		u64 t = a % b;
 		a = b;
 		b = t;
 	}
@@ -130,6 +131,46 @@ u64 paillier_decrypt(u64 c, const Paillier_pub_key *pubKey, const Paillier_priv_
 	u64 L = (u - 1)/n;
 	u64 m = mod_mul(L, l_u, n);
 	return m;
+}
+
+u64 rand_u64() {
+    unsigned char buf[8];
+    if (RAND_bytes(buf, sizeof(buf)) != 1) {
+        fprintf(stderr, "RAND_bytes failed\n");
+        exit(1);
+    }
+    u64 x = 0;
+    for (int i = 0; i < 8; i++) {
+        x = (x << 8) | buf[i];
+    }
+    return x;
+}
+
+u64 rand_range(u64 min, u64 max) {
+    if (min > max) {
+        u64 t = min; min = max; max = t;
+    }
+    u64 range = max - min + 1;
+    u64 r = rand_u64() % range; 
+    return min + r;
+}
+
+u64 random_prime_in_range(u64 min, u64 max) {
+    for (;;) {
+        u64 cand = rand_range(min, max);
+        if ((cand & 1ULL) == 0) cand |= 1ULL; 
+        if (cand < 3) continue;
+        if (miller_rabin_u64(cand)) {
+            return cand;
+        }
+    }
+}
+
+u64 random_coprime(u64 n) {
+    for (;;) {
+        u64 r = rand_range(1, n - 1);
+        if (gcd_u64(r, n) == 1) return r;
+    }
 }
 
 int main(void) {
