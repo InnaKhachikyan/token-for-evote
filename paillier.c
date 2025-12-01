@@ -1,22 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "miller_rabin.h"
 #include <openssl/rand.h>
+#include "miller_rabin.h"
+#include <paillier.h>
 
-typedef unsigned long long u64;
 typedef __uint128_t u128;
-
-typedef struct {
-	u64 n;
-	u64 n_squared;
-	u64 g;
-} Paillier_pub_key;
-
-typedef struct {
-	u64 lambda;
-	u64 l_u;
-} Paillier_priv_key;
 
 u64 gcd_u64(u64 a, u64 b) {
 	while(b != 0) {
